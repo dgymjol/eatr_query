@@ -43,7 +43,7 @@ class Transformer(nn.Module):
                  dim_feedforward=2048, dropout=0.1,
                  activation="relu",
                  return_intermediate_dec=True, query_dim=2,
-                 num_queries=10,
+                 m_classes=None, tgt_embed=False, num_queries=10,
                  num_iteration=3):
         super().__init__()
 
@@ -61,7 +61,7 @@ class Transformer(nn.Module):
         self.decoder = TransformerDecoder(slot_atten, first_decoder_layer, decoder_layer,
                                           num_decoder_layers, decoder_norm, decoder_event_norm,
                                           return_intermediate=return_intermediate_dec, d_model=d_model,
-                                          query_dim=query_dim)
+                                          query_dim=query_dim, m_classes=m_classes, tgt_embed=tgt_embed,)
 
         self._reset_parameters()
 
@@ -69,7 +69,17 @@ class Transformer(nn.Module):
         self.nhead = nhead
         self.dec_layers = num_decoder_layers
         self.num_queries = num_queries
-        
+
+        self.num_queries = num_queries
+
+        self.m_classes = m_classes
+        self.tgt_embed = tgt_embed
+
+        if m_classes is not None and self.tgt_embed:
+            self.num_patterns = len(m_classes[1:-1].split(','))
+            self.patterns = nn.Embedding(self.num_patterns, d_model)
+
+
     def _reset_parameters(self):
         for p in self.parameters():
             if p.dim() > 1:
@@ -125,7 +135,7 @@ class TransformerEncoder(nn.Module):
 class TransformerDecoder(nn.Module):
 
     def __init__(self, slot_atten, first_decoder_layer, decoder_layer, num_layers, norm=None, event_norm=None, return_intermediate=False,
-                d_model=512, query_dim=2):
+                d_model=512, query_dim=2, m_classes=None, tgt_embed=False):
         super().__init__()
 
         self.slot_atten = slot_atten
@@ -148,6 +158,12 @@ class TransformerDecoder(nn.Module):
         self.event_span_embed = None
         self.moment_span_embed = None
 
+        self.m_classes = m_classes
+        self.tgt_embed = tgt_embed
+
+        if m_classes is not None and self.tgt_embed:
+            self.num_classes = len(m_classes[1:-1].split(','))
+
     def forward(self, memory, 
                 tgt_mask: Optional[Tensor] = None,
                 memory_mask: Optional[Tensor] = None,
@@ -166,6 +182,9 @@ class TransformerDecoder(nn.Module):
         src_slot = src_vid+pos_vid
         output = self.slot_atten(src_slot, src_vid_mask)  # [bsz, #queries, d_model]
         output = output.permute(1,0,2)  # [#queries, bsz, d_model]
+
+        if self.tgt_embed:
+            output = output.repeat(self.num_classes, 1, 1)
 
         if self.event_span_embed:
             tmp = self.event_span_embed(output)

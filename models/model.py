@@ -17,7 +17,7 @@ class EaTR(nn.Module):
                  num_queries, input_dropout, aux_loss=False,
                  contrastive_align_loss=False, contrastive_hdim=64,
                  max_v_l=75, span_loss_type="l1", use_txt_pos=False, n_input_proj=2,
-                 query_dim=2):
+                 query_dim=2, m_classes=None, cls_both=False, score_fg=False,):
         """ Initializes the model.
         Parameters:
             transformer: torch module of the transformer architecture. See transformer.py
@@ -89,7 +89,18 @@ class EaTR(nn.Module):
         nn.init.constant_(self.moment_span_embed.layers[-1].weight.data, 0)
         nn.init.constant_(self.moment_span_embed.layers[-1].bias.data, 0)
         # foreground classification
-        self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
+        self.cls_both=cls_both
+        self.score_fg=score_fg
+        self.m_classes=m_classes
+
+        if self.m_classes is None:
+            self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
+            self.num_patterns = 1
+        else:
+            self.m_vals = [int(v) for v in m_classes[1:-1].split(',')]
+            self.num_patterns = len(self.m_vals)
+            self.aux_class_embed = nn.Linear(hidden_dim, len(self.m_vals) +1 )  # [:-1] : foreground / [-1] : background
+            self.class_embed = nn.Linear(hidden_dim, 2)  # 0: background, 1: foreground
 
         # iterative anchor update
         self.transformer.decoder.moment_span_embed = self.moment_span_embed
@@ -182,6 +193,10 @@ class EaTR(nn.Module):
 
         out = {'pred_logits': outputs_class[-1], 'pred_spans': outputs_coord[-1]}
 
+        if self.m_classes is not None and self.cls_both:
+            outputs_aux_class = self.aux_class_embed(hs)
+            out['aux_pred_logits'] = outputs_aux_class[-1]
+
         out['pseudo_event_spans'] = pseudo_event_spans  # comment the line for computational cost check
         out['pred_event_spans'] = event_outputs_coord
 
@@ -203,6 +218,13 @@ class EaTR(nn.Module):
             # assert proj_queries and proj_txt_mem
             out['aux_outputs'] = [{'pred_logits': a, 'pred_spans': b} for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]
 
+            if not self.cls_both:
+                out['aux_outputs'] = [
+                    {'pred_logits': a, 'pred_spans': b} for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]
+            else:
+                out['aux_outputs'] = [
+                    {'pred_logits': a, 'aux_pred_logits' : b, 'pred_spans': c} for a, b, c in zip(outputs_class[:-1], outputs_aux_class[:-1], outputs_coord[:-1])]
+            
             if self.contrastive_align_loss:
                 assert proj_queries is not None
                 for idx, d in enumerate(proj_queries[1:-1]):

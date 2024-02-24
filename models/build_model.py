@@ -30,6 +30,8 @@ def build_model(args):
         query_dim = args.query_dim,
         num_queries=args.num_queries,
         num_iteration=args.num_slot_iter,
+        m_classes=args.m_classes,
+        tgt_embed=args.tgt_embed,
     )
     model = EaTR(
         transformer,
@@ -46,6 +48,9 @@ def build_model(args):
         use_txt_pos=args.use_txt_pos,
         n_input_proj=args.n_input_proj,
         query_dim=args.query_dim,
+        m_classes=args.m_classes,
+        cls_both=args.cls_both, 
+        score_fg=args.score_fg,
     )
 
     matcher = build_matcher(args)
@@ -76,6 +81,9 @@ def build_model(args):
         eos_coef=args.eos_coef, temperature=args.temperature,
         span_loss_type=args.span_loss_type, max_v_l=args.max_v_l,
         saliency_margin=args.saliency_margin,
+        m_classes=args.m_classes, cls_both=args.cls_both, score_fg=args.score_fg, 
+        label_loss_type=args.label_loss_type, focal_alpha=args.focal_alpha, focal_gamma=args.focal_gamma,
+        aux_label_loss_type=args.aux_label_loss_type, aux_focal_alpha=args.aux_focal_alpha, aux_focal_gamma=args.aux_focal_gamma,
         )
 
     criterion.to(device)
